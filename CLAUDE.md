@@ -12,6 +12,15 @@ Mac app (+ Python CLI) that detects which DJI log profile (D-Log1 / D-Log2) a cl
 - Detection values (Osmo Pocket 4P): dbcm 5 = D-Log1, 2 = D-Log2; djmd field 2.2.3.1: 22 = D-Log1, 2 = D-Log2.
   Learned from the user's own sample clips; no clips are in the repo (and .gitignore blocks video).
 
+## Tests
+
+`python3 tests/test_dlog_tagger.py` (after `mac/build.sh` so the app tests run too). It generates synthetic
+Pocket 4P-style and corrupt MP4s at runtime; never commit real footage. Add a case there for any new camera
+values or parser change. The Release workflow runs it and won't publish on failure.
+Don't run crash tests against the user's installed app in ~/Applications: each crash pops a "quit
+unexpectedly" dialog on their screen. Use mac/build/ instead, and don't kill/replace their running app
+without telling them.
+
 ## Changelog
 
 Every user-visible change (feature, fix, behaviour change) gets a line under `## [Unreleased]` in

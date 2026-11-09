@@ -7,6 +7,17 @@ becomes the new version's release notes automatically.
 
 ## [Unreleased]
 
+### Fixed
+- The app no longer crashes on a corrupt or damaged video file (for example from a bad SD card); the clip
+  is shown as Unknown and left alone.
+- Command-line tool: no longer stops partway through a batch on a cut-off file, limits how much it reads
+  from a damaged file, and can never overwrite an existing file when renaming or copying.
+
+### Security
+- Release builds now run automatic tests first (correct D-Log1/D-Log2 detection, corrupt files, no
+  overwriting) and are only published if they pass.
+- The build tools used by GitHub are pinned to exact versions and kept up to date by Dependabot.
+
 ## [1.1.0] - 2026-11-09
 
 ### Added

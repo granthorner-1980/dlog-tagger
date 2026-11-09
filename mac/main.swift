@@ -58,7 +58,9 @@ final class MP4File {
             } else if size == 0 {
                 size = end - pos
             }
-            guard size >= hdr else { break }
+            // A box must fit inside its container. Corrupt files can claim sizes up to 2^64,
+            // which would overflow the arithmetic below and crash the app.
+            guard size >= hdr, size <= end - pos else { break }
             out.append(Box(type: String(decoding: h[4..<8], as: UTF8.self), pos: pos, hdr: hdr, size: size))
             pos += size
         }

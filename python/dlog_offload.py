@@ -26,6 +26,7 @@ How it knows
 Only uses the Python standard library - nothing to install.
 """
 import argparse
+import errno
 import os
 import shutil
 import struct
@@ -37,6 +38,7 @@ DJMD_TO_PROFILE = {22: "DLOG1", 2: "DLOG2"}
 
 VIDEO_EXTS = {".mp4", ".mov"}
 TAG_SUFFIXES = ("_DLOG1", "_DLOG2")
+MAX_SAMPLE = 10_000_000      # a DJI metadata frame is a few KB; refuse anything absurd
 
 
 # ---- minimal MP4 box reader -------------------------------------------------
@@ -50,11 +52,14 @@ def _boxes(f, start, end):
         size, typ = struct.unpack(">I4s", head)
         hdr = 8
         if size == 1:
-            size = struct.unpack(">Q", f.read(8))[0]
+            big = f.read(8)
+            if len(big) < 8:             # cut-off file
+                return
+            size = struct.unpack(">Q", big)[0]
             hdr = 16
         elif size == 0:
             size = end - pos
-        if size < hdr:
+        if size < hdr or size > end - pos:   # corrupt: box doesn't fit its container
             return
         yield typ, pos, hdr, size
         pos += size
@@ -139,6 +144,8 @@ def _read_djmd(f, moov):
         _, sample_size, _count = struct.unpack(">III", f.read(12))
         if sample_size == 0:
             sample_size = struct.unpack(">I", f.read(4))[0]
+        if not 0 < sample_size < MAX_SAMPLE:
+            return None
         f.seek(chunk[0] + chunk[1] + 8)      # skip version/flags + entry count
         offset = struct.unpack(">Q" if is64 else ">I", f.read(8 if is64 else 4))[0]
         f.seek(offset)
@@ -148,15 +155,22 @@ def _read_djmd(f, moov):
 
 def detect(path):
     """Return (profile or None, dbcm value, djmd value)."""
+    corrupt = (ValueError, IndexError, struct.error)   # malformed file: treat as unknown, never crash
     with open(path, "rb") as f:
         f.seek(0, 2)
-        moov = _find(f, 0, f.tell(), [b"moov"])
+        try:
+            moov = _find(f, 0, f.tell(), [b"moov"])
+        except corrupt:
+            moov = None
         if not moov:
             return None, None, None
-        dbcm = _read_dbcm(f, moov)
+        try:
+            dbcm = _read_dbcm(f, moov)
+        except corrupt:
+            dbcm = None
         try:
             djmd = _read_djmd(f, moov)
-        except (ValueError, IndexError, struct.error):
+        except corrupt:
             djmd = None
     a = DBCM_TO_PROFILE.get(dbcm)
     b = DJMD_TO_PROFILE.get(djmd)
@@ -183,13 +197,36 @@ def find_clips(root):
                 yield os.path.join(dirpath, name)
 
 
+def move_no_overwrite(src, dst):
+    """Rename src to dst, refusing (FileExistsError) if dst exists - even if it
+    appears between our check and the rename."""
+    if os.name == "nt":
+        os.rename(src, dst)              # Windows never overwrites with rename
+        return
+    try:
+        os.link(src, dst)                # atomic: fails if dst already exists
+    except FileExistsError:
+        raise
+    except OSError:
+        # filesystem without hard links (e.g. an exFAT SD card): best effort
+        if os.path.lexists(dst):
+            raise FileExistsError(errno.EEXIST, "already exists", dst)
+        os.rename(src, dst)
+        return
+    os.unlink(src)
+
+
 def copy_verified(src, dst):
     tmp = dst + ".partial"
     shutil.copy2(src, tmp)
-    if os.path.getsize(tmp) != os.path.getsize(src):
-        os.remove(tmp)
-        raise IOError(f"size mismatch copying {src}")
-    os.replace(tmp, dst)
+    try:
+        if os.path.getsize(tmp) != os.path.getsize(src):
+            raise IOError(f"size mismatch copying {src}")
+        move_no_overwrite(tmp, dst)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 
 def main():
@@ -244,9 +281,12 @@ def main():
             continue
         try:
             if args.in_place:
-                os.rename(src, dst)
+                move_no_overwrite(src, dst)
             else:
                 copy_verified(src, dst)
+        except FileExistsError:
+            print(f"  ERROR    {new} already exists, not overwriting")
+            counts["error"] += 1
         except OSError as e:
             print(f"  ERROR    {name}: {e}")
             counts["error"] += 1

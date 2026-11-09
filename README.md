@@ -133,10 +133,12 @@ sure it's never mistaken for log.
 ```
 mac/        SwiftUI app — main.swift (everything), build.sh, make_icon.swift (draws the icon)
 python/     dlog_offload.py — cross-platform command-line version
+tests/      test_dlog_tagger.py — builds synthetic and corrupt MP4s and tests both tools
 docs/       README images
 ```
 
 No Xcode project needed: `mac/build.sh` compiles `main.swift` with `swiftc` and assembles the `.app`.
+Run the tests with `python3 tests/test_dlog_tagger.py` (they also run automatically before every release).
 
 What's changed in each version: [CHANGELOG.md](CHANGELOG.md).
 Releasing a new version: see [RELEASING.md](RELEASING.md) (one click in GitHub Actions).
