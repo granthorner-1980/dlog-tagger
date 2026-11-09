@@ -1,6 +1,7 @@
 # One-click release: GitHub → Actions → "Release" → Run workflow.
 # Builds the universal Mac app on a GitHub macOS machine, bumps VERSION in
-# mac/build.sh, tags the commit, and publishes a GitHub release with the zip.
+# mac/build.sh, moves the CHANGELOG.md "Unreleased" notes under the new version,
+# tags the commit, and publishes a GitHub release with those notes and the zip.
 name: Release
 
 on:
@@ -11,7 +12,7 @@ on:
         required: true
         type: string
       whats_new:
-        description: "What's new in this version (optional, shown in the release notes)"
+        description: "Optional extra line for the top of the release notes (the list of changes comes from CHANGELOG.md)"
         required: false
         type: string
       dry_run:
@@ -59,32 +60,18 @@ jobs:
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "SHA=$(shasum -a 256 "../$ZIP" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
-      - name: Upload zip (test runs)
-        if: inputs.dry_run
-        uses: actions/upload-artifact@v7
-        with:
-          name: DLogTagger-${{ env.VERSION }}-macOS
-          path: ${{ env.ZIP }}
-
-      - name: Commit version, tag, publish release
-        if: ${{ !inputs.dry_run }}
+      - name: Write release notes from CHANGELOG.md
         env:
-          GH_TOKEN: ${{ github.token }}
           WHATS_NEW: ${{ inputs.whats_new }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet mac/build.sh; then
-            git commit -m "Release v$VERSION" mac/build.sh
-            git push origin HEAD
+          CHANGES="$(.github/scripts/changelog.sh unreleased)"
+          if [ -z "$CHANGES" ] && [ -z "$WHATS_NEW" ]; then
+            echo "::error::Nothing listed under 'Unreleased' in CHANGELOG.md. Add what changed there (or fill in the extra-line box) and run again."
+            exit 1
           fi
-          git tag "v$VERSION"
-          git push origin "v$VERSION"
-
           {
-            if [ -n "$WHATS_NEW" ]; then
-              echo "## What's new"; echo; echo "$WHATS_NEW"; echo
-            fi
+            if [ -n "$WHATS_NEW" ]; then echo "$WHATS_NEW"; echo; fi
+            if [ -n "$CHANGES" ]; then echo "## What's new"; echo; echo "$CHANGES"; echo; fi
             echo "## Install"
             echo "1. Download \`DLogTagger-$VERSION-macOS.zip\` below, unzip, and drag **D-Log Tagger** to Applications."
             echo "2. First launch: macOS can't verify it (not notarised yet). Click **Done**, then **System Settings → Privacy & Security → Open Anyway**."
@@ -92,6 +79,31 @@ jobs:
             echo "Requires macOS 14 or later · Universal (Apple Silicon + Intel)."
             echo
             echo "SHA-256 \`$SHA\`"
-          } > notes.md
+          } > "$RUNNER_TEMP/notes.md"
+          echo "NOTES=$RUNNER_TEMP/notes.md" >> "$GITHUB_ENV"
+          { echo "# Release notes for v$VERSION"; echo; cat "$RUNNER_TEMP/notes.md"; } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/notes.md"
 
-          gh release create "v$VERSION" "$ZIP" --title "D-Log Tagger $VERSION" --notes-file notes.md
+      - name: Upload zip (test runs)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v7
+        with:
+          name: DLogTagger-${{ env.VERSION }}-macOS
+          path: ${{ env.ZIP }}
+
+      - name: Commit version + changelog, tag, publish release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          .github/scripts/changelog.sh stamp "$VERSION" "$(date -u +%Y-%m-%d)"
+          git add mac/build.sh CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Release v$VERSION"
+            git push origin HEAD
+          fi
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" "$ZIP" --title "D-Log Tagger $VERSION" --notes-file "$NOTES"

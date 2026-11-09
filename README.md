@@ -138,6 +138,7 @@ docs/       README images
 
 No Xcode project needed: `mac/build.sh` compiles `main.swift` with `swiftc` and assembles the `.app`.
 
+What's changed in each version: [CHANGELOG.md](CHANGELOG.md).
 Releasing a new version: see [RELEASING.md](RELEASING.md) (one click in GitHub Actions).
 
 ## License
