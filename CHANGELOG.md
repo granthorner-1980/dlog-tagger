@@ -7,6 +7,8 @@ becomes the new version's release notes automatically.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-09
+
 ### Added
 - **One-click updates.** The app checks for new versions once a day and offers to install them with one
   click, showing what's new. You can also check any time with **D-Log Tagger → Check for Updates…**.
@@ -49,6 +51,7 @@ First release.
   modified.
 - Universal app (Apple Silicon + Intel), macOS 14 or later.
 
-[Unreleased]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/granthorner-1980/dlog-tagger/releases/tag/v1.0.0
