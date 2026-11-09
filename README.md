@@ -32,8 +32,19 @@ data is never modified.
 
 ### Install
 
-D-Log Tagger is free and open source. It isn't notarised by Apple yet, so the simplest way to get it is to
-build it yourself — one command, takes about a minute:
+1. Download **`DLogTagger-x.y.z-macOS.zip`** from the
+   [latest release](https://github.com/granthorner-1980/dlog-tagger/releases/latest).
+2. Double-click the zip, then drag **D-Log Tagger** into your **Applications** folder.
+3. **First launch only:** the app isn't notarised by Apple yet, so macOS will say it can't verify it.
+   Click **Done**, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**
+   next to "D-Log Tagger", then confirm. After that it opens normally.
+
+Requires macOS 14 Sonoma or later. Runs natively on Apple Silicon and Intel.
+
+<details>
+<summary><b>Or build it yourself</b> (no security prompt)</summary>
+
+Apps you build on your own Mac open without the warning. It's one command and takes about a minute:
 
 ```bash
 xcode-select --install          # only if you don't have Xcode or its Command Line Tools
@@ -42,12 +53,8 @@ cd dlog-tagger/mac
 ./build.sh --install            # builds and copies it to ~/Applications
 ```
 
-Then open **D-Log Tagger** from Spotlight or `~/Applications`.
-
-> **Got a pre-built copy from someone?** macOS will say it "can't be verified". Open it once, then go to
-> **System Settings → Privacy & Security** and click **Open Anyway**. You only need to do this once.
-
-Requires macOS 14 Sonoma or later. Runs natively on Apple Silicon and Intel.
+`./build.sh --zip` makes the release zip instead.
+</details>
 
 ### Use
 
@@ -104,7 +111,7 @@ If your clips show up as **Unknown**, the app needs to learn your camera's value
 log mode, then run:
 
 ```bash
-"$HOME/Applications/D-Log Tagger.app/Contents/MacOS/DLogTagger" --detect /path/to/clip1.MP4 /path/to/clip2.MP4
+"/Applications/D-Log Tagger.app/Contents/MacOS/DLogTagger" --detect /path/to/clip1.MP4 /path/to/clip2.MP4
 ```
 
 It prints a line per clip like `UNKNOWN  dbcm=5  djmd=22  …`. [Open an issue](https://github.com/granthorner-1980/dlog-tagger/issues/new)
