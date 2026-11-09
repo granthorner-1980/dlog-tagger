@@ -1,0 +1,14 @@
+# build output
+mac/build/
+
+# never commit footage
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.LRF
+
+# macOS / Python clutter
+.DS_Store
+__pycache__/
+*.pyc
