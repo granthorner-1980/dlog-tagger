@@ -7,6 +7,8 @@ becomes the new version's release notes automatically.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-09
+
 ### Added
 - **Undo** (or ⌘Z) straight after Rename & Tag puts those clips back exactly as they were.
 - **Restore Originals…** puts every clip in the folder back to its original name and removes the D-Log
@@ -30,5 +32,6 @@ First release.
   modified.
 - Universal app (Apple Silicon + Intel), macOS 14 or later.
 
-[Unreleased]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/granthorner-1980/dlog-tagger/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/granthorner-1980/dlog-tagger/releases/tag/v1.0.0

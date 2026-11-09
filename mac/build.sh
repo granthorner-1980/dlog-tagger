@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "${0:A:h}"
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 MIN_MACOS="14.0"
 OUT="build"
 APP="$OUT/D-Log Tagger.app"
