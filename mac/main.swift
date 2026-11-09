@@ -233,7 +233,7 @@ enum ClipStatus: Equatable {
 
 struct Clip: Identifiable {
     let id = UUID()
-    let url: URL
+    var url: URL
     let detection: Detection
     var status: ClipStatus
     var restorable = false          // has our suffix or our Finder tag
@@ -368,12 +368,18 @@ final class Model: ObservableObject {
             if tag {
                 do { try applyFinderTag(url, profile) }
                 catch {
-                    if url != clips[i].url { steps.append(UndoStep(original: clips[i].url, current: url, removeTag: false)) }
+                    if url != clips[i].url {
+                        steps.append(UndoStep(original: clips[i].url, current: url, removeTag: false))
+                        clips[i].url = url
+                        clips[i].restorable = true
+                    }
                     clips[i].status = .failed((rename.map { "Renamed to \($0), but " } ?? "") + "couldn't add tag")
                     continue
                 }
             }
             steps.append(UndoStep(original: clips[i].url, current: url, removeTag: tag))
+            clips[i].url = url              // show the new name straight away
+            clips[i].restorable = true      // so Restore Originals works without a rescan
             switch (rename != nil, tag) {
             case (true, true): clips[i].status = .done("Renamed + tagged")
             case (true, false): clips[i].status = .done("Renamed")
