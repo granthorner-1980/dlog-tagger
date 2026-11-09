@@ -128,6 +128,8 @@ docs/       README images
 
 No Xcode project needed: `mac/build.sh` compiles `main.swift` with `swiftc` and assembles the `.app`.
 
+Releasing a new version: see [RELEASING.md](RELEASING.md) (one click in GitHub Actions).
+
 ## License
 
 [MIT](LICENSE) © 2026 Grant Horner

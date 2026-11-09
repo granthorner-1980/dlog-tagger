@@ -1,0 +1,97 @@
+# One-click release: GitHub → Actions → "Release" → Run workflow.
+# Builds the universal Mac app on a GitHub macOS machine, bumps VERSION in
+# mac/build.sh, tags the commit, and publishes a GitHub release with the zip.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version number, e.g. 1.1.0"
+        required: true
+        type: string
+      whats_new:
+        description: "What's new in this version (optional, shown in the release notes)"
+        required: false
+        type: string
+      dry_run:
+        description: "Test only: build the zip but don't publish anything"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version number
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.2.3 (got '$VERSION')"; exit 1
+          fi
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::v$VERSION already exists - pick a higher number"; exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Set version in build script
+        run: sed -i '' -E "s/^VERSION=\"[^\"]*\"/VERSION=\"$VERSION\"/" mac/build.sh && grep '^VERSION=' mac/build.sh
+
+      - name: Build app and zip
+        run: |
+          swiftc --version
+          cd mac && ./build.sh --zip
+          ZIP="mac/build/DLogTagger-$VERSION-macOS.zip"
+          test -f "../$ZIP"
+          lipo -archs "build/D-Log Tagger.app/Contents/MacOS/DLogTagger"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "SHA=$(shasum -a 256 "../$ZIP" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Upload zip (test runs)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLogTagger-${{ env.VERSION }}-macOS
+          path: ${{ env.ZIP }}
+
+      - name: Commit version, tag, publish release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WHATS_NEW: ${{ inputs.whats_new }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet mac/build.sh; then
+            git commit -m "Release v$VERSION" mac/build.sh
+            git push origin HEAD
+          fi
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+          {
+            if [ -n "$WHATS_NEW" ]; then
+              echo "## What's new"; echo; echo "$WHATS_NEW"; echo
+            fi
+            echo "## Install"
+            echo "1. Download \`DLogTagger-$VERSION-macOS.zip\` below, unzip, and drag **D-Log Tagger** to Applications."
+            echo "2. First launch: macOS can't verify it (not notarised yet). Click **Done**, then **System Settings → Privacy & Security → Open Anyway**."
+            echo
+            echo "Requires macOS 14 or later · Universal (Apple Silicon + Intel)."
+            echo
+            echo "SHA-256 \`$SHA\`"
+          } > notes.md
+
+          gh release create "v$VERSION" "$ZIP" --title "D-Log Tagger $VERSION" --notes-file notes.md
