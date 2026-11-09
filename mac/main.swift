@@ -196,6 +196,31 @@ func applyFinderTag(_ url: URL, _ profile: Profile) throws {
     if result != 0 { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
 }
 
+func hasAnyOurTag(_ url: URL) -> Bool {
+    readFinderTags(url).contains { ourTagNames.contains(tagName($0)) }
+}
+
+/// Removes D-Log1/D-Log2 tags, keeping any other tags the user added.
+func removeOurFinderTags(_ url: URL) throws {
+    let all = readFinderTags(url)
+    let kept = all.filter { !ourTagNames.contains(tagName($0)) }
+    guard kept.count != all.count else { return }
+    let result: Int32
+    if kept.isEmpty {
+        result = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return -1 }
+            return removexattr(path, tagAttribute, 0)
+        }
+    } else {
+        let data = try PropertyListSerialization.data(fromPropertyList: kept, format: .binary, options: 0)
+        result = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return -1 }
+            return data.withUnsafeBytes { setxattr(path, tagAttribute, $0.baseAddress, data.count, 0, 0) }
+        }
+    }
+    if result != 0 { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+}
+
 // MARK: - Clips and renaming
 
 enum ClipStatus: Equatable {
@@ -211,7 +236,20 @@ struct Clip: Identifiable {
     let url: URL
     let detection: Detection
     var status: ClipStatus
+    var restorable = false          // has our suffix or our Finder tag
     var name: String { url.lastPathComponent }
+}
+
+/// One clip changed by Rename & Tag, so it can be undone exactly.
+struct UndoStep { let original: URL; let current: URL; let removeTag: Bool }
+
+/// "DJI_..._D_DLOG1.MP4" -> "DJI_..._D.MP4"; nil if the name has no suffix of ours.
+func originalName(for filename: String) -> String? {
+    guard isTagged(filename) else { return nil }
+    let url = URL(fileURLWithPath: filename)
+    let ext = url.pathExtension
+    let base = String(url.deletingPathExtension().lastPathComponent.dropLast("_DLOG1".count))
+    return ext.isEmpty ? base : "\(base).\(ext)"
 }
 
 func newName(for filename: String, _ profile: Profile) -> String {
@@ -247,7 +285,8 @@ func scan(_ folder: URL) -> [Clip] {
         } else {
             status = .unknown
         }
-        return Clip(url: url, detection: d, status: status)
+        return Clip(url: url, detection: d, status: status,
+                    restorable: isTagged(url.lastPathComponent) || hasAnyOurTag(url))
     }
 }
 
@@ -259,8 +298,12 @@ final class Model: ObservableObject {
     @Published var clips: [Clip] = []
     @Published var busy = false
     @Published var hasScanned = false
+    @Published var lastBatch: [UndoStep] = []     // what the last Rename & Tag changed
+    @Published var notice: String?                // shown in place of the summary after undo/restore
 
     var toRename: Int { clips.filter { if case .pending = $0.status { true } else { false } }.count }
+    var toRestore: Int { clips.filter(\.restorable).count }
+    var canUndo: Bool { !lastBatch.isEmpty && !busy }
 
     var summary: String {
         guard hasScanned else {
@@ -287,6 +330,8 @@ final class Model: ObservableObject {
             folder = url
             clips = []
             hasScanned = false
+            lastBatch = []
+            notice = nil
             find()
         }
     }
@@ -305,6 +350,8 @@ final class Model: ObservableObject {
 
     func rename() {
         let fm = FileManager.default
+        var steps: [UndoStep] = []
+        notice = nil
         for i in clips.indices {
             guard case .pending(let rename, let tag) = clips[i].status,
                   let profile = clips[i].detection.profile else { continue }
@@ -321,16 +368,60 @@ final class Model: ObservableObject {
             if tag {
                 do { try applyFinderTag(url, profile) }
                 catch {
+                    if url != clips[i].url { steps.append(UndoStep(original: clips[i].url, current: url, removeTag: false)) }
                     clips[i].status = .failed((rename.map { "Renamed to \($0), but " } ?? "") + "couldn't add tag")
                     continue
                 }
             }
+            steps.append(UndoStep(original: clips[i].url, current: url, removeTag: tag))
             switch (rename != nil, tag) {
             case (true, true): clips[i].status = .done("Renamed + tagged")
             case (true, false): clips[i].status = .done("Renamed")
             default: clips[i].status = .done("Tagged")
             }
         }
+        lastBatch = steps
+    }
+
+    /// Reverses exactly what the last Rename & Tag did.
+    func undo() {
+        guard canUndo else { return }
+        let fm = FileManager.default
+        var problems = 0
+        for step in lastBatch.reversed() {
+            if step.removeTag { do { try removeOurFinderTags(step.current) } catch { problems += 1 } }
+            guard step.current != step.original else { continue }
+            if fm.fileExists(atPath: step.original.path) { problems += 1; continue }
+            do { try fm.moveItem(at: step.current, to: step.original) } catch { problems += 1 }
+        }
+        let n = lastBatch.count
+        lastBatch = []
+        notice = problems == 0
+            ? "Undone: \(n == 1 ? "1 clip is" : "\(n) clips are") back to how \(n == 1 ? "it was" : "they were")."
+            : "Undone, but \(problems) change\(problems == 1 ? "" : "s") couldn't be reversed (a file with the original name already exists)."
+        find()
+    }
+
+    /// Puts every clip in the folder back to its original name and removes our tags.
+    func restoreOriginals() {
+        let fm = FileManager.default
+        var restored = 0, problems = 0
+        for clip in clips where clip.restorable {
+            // check for a name clash first, so a clip is never left half-restored
+            let dest = originalName(for: clip.name).map { clip.url.deletingLastPathComponent().appendingPathComponent($0) }
+            if let dest, fm.fileExists(atPath: dest.path) { problems += 1; continue }
+            if hasAnyOurTag(clip.url) {
+                do { try removeOurFinderTags(clip.url) } catch { problems += 1; continue }
+            }
+            if let dest {
+                do { try fm.moveItem(at: clip.url, to: dest) } catch { problems += 1; continue }
+            }
+            restored += 1
+        }
+        lastBatch = []
+        notice = "Restored \(restored) clip\(restored == 1 ? "" : "s") to the original name"
+            + (problems > 0 ? ". \(problems) couldn't be restored (a file with the original name already exists)." : ".")
+        find()
     }
 }
 
@@ -370,7 +461,8 @@ struct StatusText: View {
 }
 
 struct ContentView: View {
-    @StateObject private var model = Model()
+    @ObservedObject var model: Model
+    @State private var confirmRestore = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -391,6 +483,17 @@ struct ContentView: View {
                     .controlSize(.large)
                 if model.busy { ProgressView().controlSize(.small) }
                 Spacer()
+                Button { confirmRestore = true } label: {
+                    Label("Restore Originals…", systemImage: "arrow.uturn.backward")
+                }
+                .help("Put every clip in this folder back to its original name and remove the D-Log tags")
+                .controlSize(.large)
+                .disabled(model.toRestore == 0 || model.busy)
+                if model.canUndo {
+                    Button { model.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward.circle") }
+                        .help("Reverse the last Rename & Tag (⌘Z)")
+                        .controlSize(.large)
+                }
                 Button { model.rename() } label: {
                     Label(model.toRename == 0 ? "Rename & Tag"
                           : model.toRename == 1 ? "Rename & Tag 1 Clip" : "Rename & Tag \(model.toRename) Clips",
@@ -410,7 +513,11 @@ struct ContentView: View {
             }
 
             HStack {
-                Text(model.summary).foregroundStyle(.secondary)
+                if let notice = model.notice {
+                    Label(notice, systemImage: "arrow.uturn.backward.circle.fill").foregroundStyle(.secondary)
+                } else {
+                    Text(model.summary).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("Rename before importing into DaVinci Resolve.")
                     .font(.footnote).foregroundStyle(.tertiary)
@@ -418,6 +525,15 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(minWidth: 760, minHeight: 440)
+        .confirmationDialog(
+            "Put \(model.toRestore == 1 ? "1 clip" : "\(model.toRestore) clips") back to the original \(model.toRestore == 1 ? "name" : "names")?",
+            isPresented: $confirmRestore
+        ) {
+            Button("Restore Originals") { model.restoreOriginals() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes _DLOG1 / _DLOG2 from the filenames in this folder and removes the D-Log Finder tags. Your own tags are kept. You can Rename & Tag again at any time.")
+        }
         .task {
             // Optional: open with a folder already chosen (DLogTagger --folder <path>)
             if let i = CommandLine.arguments.firstIndex(of: "--folder"), i + 1 < CommandLine.arguments.count,
@@ -430,9 +546,18 @@ struct ContentView: View {
 }
 
 struct DLogTaggerApp: App {
+    @StateObject private var model = Model()
+
     var body: some Scene {
-        Window("D-Log Tagger", id: "main") { ContentView() }
+        Window("D-Log Tagger", id: "main") { ContentView(model: model) }
             .windowResizability(.contentMinSize)
+            .commands {
+                CommandGroup(replacing: .undoRedo) {
+                    Button("Undo Rename & Tag") { model.undo() }
+                        .keyboardShortcut("z", modifiers: .command)
+                        .disabled(!model.canUndo)
+                }
+            }
     }
 }
 

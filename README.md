@@ -66,6 +66,13 @@ cd dlog-tagger/mac
 Clips that are already renamed and tagged are skipped, so it's safe to run on the same folder again.
 Clips it doesn't recognise (e.g. normal-colour footage) are left untouched.
 
+**Changed your mind?**
+
+- **Undo** (or **⌘Z**) straight after Rename & Tag reverses exactly what it just did.
+- **Restore Originals…** puts every clip in the folder back to its original name and removes the D-Log
+  tags — any time, even for clips renamed weeks ago. Your own Finder tags are kept, and a clip is skipped
+  (not half-changed) if a file with its original name already exists.
+
 > **Tip:** rename *before* importing into Resolve. Renaming files that are already in a Resolve project
 > means you'll have to relink them.
 
