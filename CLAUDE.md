@@ -7,6 +7,11 @@ Mac app (+ Python CLI) that detects which DJI log profile (D-Log1 / D-Log2) a cl
   (`--install` → ~/Applications, `--zip` → release zip). No Xcode project.
 - Hidden test mode: `"<app>/Contents/MacOS/DLogTagger" --detect file.MP4…` prints `PROFILE dbcm=… djmd=…`.
   `--folder <path>` opens the window with a folder pre-scanned (used for README screenshots).
+- In-app updates use Sparkle 2 (pinned + sha256 in `build.sh`, downloaded to gitignored `mac/vendor/`). Feed:
+  `appcast.xml` attached to every release (`releases/latest/download/appcast.xml`), written by
+  `.github/scripts/appcast.py` and EdDSA-signed in the Release workflow; `SURequireSignedFeed` is on.
+  Private key: `SPARKLE_PRIVATE_KEY` in the GitHub `release` environment (main only) + the user's login keychain
+  (account `dlog-tagger`). Never print or commit it; never change `SPARKLE_PUBLIC_KEY` (it would strand users).
 - `python/dlog_offload.py` – cross-platform CLI; keep its value tables in sync with `dbcmMap`/`djmdMap`
   in `main.swift` when adding cameras.
 - Detection values (Osmo Pocket 4P): dbcm 5 = D-Log1, 2 = D-Log2; djmd field 2.2.3.1: 22 = D-Log1, 2 = D-Log2.

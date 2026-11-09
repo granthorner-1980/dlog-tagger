@@ -2,6 +2,9 @@
 # Builds the universal Mac app on a GitHub macOS machine, bumps VERSION in
 # mac/build.sh, moves the CHANGELOG.md "Unreleased" notes under the new version,
 # tags the commit, and publishes a GitHub release with those notes and the zip.
+# It also signs the zip and publishes appcast.xml, the feed the app's
+# "Check for Updates…" reads. The signing key (SPARKLE_PRIVATE_KEY) lives in the
+# protected "release" environment, which only runs from the main branch.
 name: Release
 
 on:
@@ -29,6 +32,7 @@ concurrency: release
 jobs:
   release:
     runs-on: macos-latest
+    environment: release      # unlocks the signing key; GitHub only allows this on main
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -76,6 +80,10 @@ jobs:
             if [ -n "$WHATS_NEW" ]; then echo "$WHATS_NEW"; echo; fi
             if [ -n "$CHANGES" ]; then echo "## What's new"; echo; echo "$CHANGES"; echo; fi
             echo "## Install"
+            echo "**Already have 1.2.0 or later?** Choose **D-Log Tagger → Check for Updates…** (or just wait for the update prompt)."
+            echo
+            echo "**New, or on 1.0 / 1.1:**"
+            echo
             echo "1. Download \`DLogTagger-$VERSION-macOS.zip\` below, unzip, and drag **D-Log Tagger** to Applications."
             echo "2. First launch: macOS can't verify it (not notarised yet). Click **Done**, then **System Settings → Privacy & Security → Open Anyway**."
             echo
@@ -83,16 +91,45 @@ jobs:
             echo
             echo "SHA-256 \`$SHA\`"
           } > "$RUNNER_TEMP/notes.md"
+          {
+            if [ -n "$WHATS_NEW" ]; then echo "$WHATS_NEW"; echo; fi
+            if [ -n "$CHANGES" ]; then echo "$CHANGES"; fi
+          } > "$RUNNER_TEMP/update-notes.md"
           echo "NOTES=$RUNNER_TEMP/notes.md" >> "$GITHUB_ENV"
           { echo "# Release notes for v$VERSION"; echo; cat "$RUNNER_TEMP/notes.md"; } >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/notes.md"
 
-      - name: Upload zip (test runs)
+      - name: Sign the update and write the update feed (appcast.xml)
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::The SPARKLE_PRIVATE_KEY secret is missing from the 'release' environment (Settings → Environments → release). See RELEASING.md."
+            exit 1
+          fi
+          BIN="$(echo mac/vendor/Sparkle-*/bin)"
+          APP="mac/build/D-Log Tagger.app"
+          SIG="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$BIN/sign_update" --ed-key-file - -p "$ZIP")"
+          swift .github/scripts/verify_update.swift "$APP" "$ZIP" "$SIG"
+          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
+          URL="https://github.com/$REPO/releases/download/v$VERSION/$(basename "$ZIP")"
+          FEED=mac/build/appcast.xml
+          python3 .github/scripts/appcast.py "$VERSION" "$MIN_OS" "$URL" "$ZIP" "$SIG" "$RUNNER_TEMP/update-notes.md" > "$FEED"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$BIN/sign_update" --ed-key-file - "$FEED"
+          grep -q 'sparkle-signatures' "$FEED"
+          xmllint --noout "$FEED"
+          echo "FEED=$FEED" >> "$GITHUB_ENV"
+          cat "$FEED"
+
+      - name: Upload zip + update feed (test runs)
         if: inputs.dry_run
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DLogTagger-${{ env.VERSION }}-macOS
-          path: ${{ env.ZIP }}
+          path: |
+            ${{ env.ZIP }}
+            ${{ env.FEED }}
 
       - name: Commit version + changelog, tag, publish release
         if: ${{ !inputs.dry_run }}
@@ -109,4 +146,4 @@ jobs:
           fi
           git tag "v$VERSION"
           git push origin "v$VERSION"
-          gh release create "v$VERSION" "$ZIP" --title "D-Log Tagger $VERSION" --notes-file "$NOTES"
+          gh release create "v$VERSION" "$ZIP" "$FEED" --title "D-Log Tagger $VERSION" --notes-file "$NOTES"

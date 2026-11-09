@@ -12,3 +12,6 @@ mac/build/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Sparkle (downloaded by mac/build.sh)
+mac/vendor/

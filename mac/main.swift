@@ -8,6 +8,7 @@
 
 import AppKit
 import SwiftUI
+import Sparkle
 
 // MARK: - What the raw values mean
 
@@ -572,13 +573,32 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Updates (Sparkle): checks the GitHub feed daily and offers one-click install
+
+final class Updater: ObservableObject {
+    let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil,
+                                                  userDriverDelegate: nil)
+    @Published var canCheck = false
+
+    init() {
+        controller.updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheck)
+    }
+
+    func check() { controller.checkForUpdates(nil) }
+}
+
 struct DLogTaggerApp: App {
     @StateObject private var model = Model()
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         Window("D-Log Tagger", id: "main") { ContentView(model: model) }
             .windowResizability(.contentMinSize)
             .commands {
+                CommandGroup(after: .appInfo) {
+                    Button("Check for Updates…") { updater.check() }
+                        .disabled(!updater.canCheck)
+                }
                 CommandGroup(replacing: .undoRedo) {
                     Button("Undo Rename & Tag") { model.undo() }
                         .keyboardShortcut("z", modifiers: .command)

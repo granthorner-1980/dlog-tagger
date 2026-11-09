@@ -41,6 +41,15 @@ data is never modified.
 
 Requires macOS 14 Sonoma or later. Runs natively on Apple Silicon and Intel.
 
+### Updates
+
+From version 1.2.0 the app keeps itself up to date: once a day it checks for a new version and offers to
+install it with one click (you can also choose **D-Log Tagger → Check for Updates…**). Updates are signed, and
+the app won't install one that isn't.
+
+On **1.0 or 1.1**? Download the latest release once as above (replace the old app); after that, updates come
+to you.
+
 <details>
 <summary><b>Or build it yourself</b> (no security prompt)</summary>
 
@@ -53,7 +62,8 @@ cd dlog-tagger/mac
 ./build.sh --install            # builds and copies it to ~/Applications
 ```
 
-`./build.sh --zip` makes the release zip instead.
+`./build.sh --zip` makes the release zip instead. The first build downloads the
+[Sparkle](https://sparkle-project.org) update framework (a fixed version, checksum-verified) into `mac/vendor/`.
 </details>
 
 ### Use
@@ -133,7 +143,7 @@ sure it's never mistaken for log.
 ```
 mac/        SwiftUI app — main.swift (everything), build.sh, make_icon.swift (draws the icon)
 python/     dlog_offload.py — cross-platform command-line version
-tests/      test_dlog_tagger.py — builds synthetic and corrupt MP4s and tests both tools
+tests/      test_dlog_tagger.py — builds synthetic and corrupt MP4s and tests both tools, plus the update setup
 docs/       README images
 ```
 

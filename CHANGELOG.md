@@ -7,6 +7,12 @@ becomes the new version's release notes automatically.
 
 ## [Unreleased]
 
+### Added
+- **One-click updates.** The app checks for new versions once a day and offers to install them with one
+  click, showing what's new. You can also check any time with **D-Log Tagger → Check for Updates…**.
+  Updates are digitally signed and the app refuses any that aren't. (If you're on 1.0 or 1.1, download
+  this version manually one last time; after that, updates come to you.)
+
 ### Fixed
 - The app no longer crashes on a corrupt or damaged video file (for example from a bad SD card); the clip
   is shown as Unknown and left alone.

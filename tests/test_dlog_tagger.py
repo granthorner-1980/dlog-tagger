@@ -9,16 +9,20 @@ clips, plus deliberately corrupt ones, then checks that:
   * the Python CLI and the Mac app label D-Log1 / D-Log2 correctly
   * neither tool crashes on corrupt files (they must report "unknown")
   * the CLI never overwrites an existing file when renaming
+  * the app is set up for signed in-app updates, and the update feed is well-formed
 
 The Mac app is tested if it has been built (mac/build.sh) or if DLOG_APP points at
 its executable; otherwise those tests are skipped.
 """
+import base64
 import os
+import plistlib
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "python"))
@@ -26,6 +30,8 @@ import dlog_offload as cli  # noqa: E402
 
 APP = os.environ.get("DLOG_APP") or os.path.join(
     ROOT, "mac", "build", "D-Log Tagger.app", "Contents", "MacOS", "DLogTagger")
+BUNDLE = os.path.dirname(os.path.dirname(os.path.dirname(APP)))      # .../D-Log Tagger.app
+SPARKLE_NS = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
 
 
 # ---- building synthetic MP4 files -------------------------------------------
@@ -162,6 +168,50 @@ class AppDetection(Base):
                 r = self.run_app([self.write(name, data)])
                 self.assertEqual(r.returncode, 0, f"app crashed (exit {r.returncode}) on {name}\n{r.stderr}")
                 self.assertTrue(r.stdout.startswith("UNKNOWN"), r.stdout)
+
+
+@unittest.skipUnless(os.access(APP, os.X_OK), f"Mac app not built ({APP})")
+class AppUpdates(unittest.TestCase):
+    """In-app updates: if any of this is wrong, users can't update (or updates aren't verified)."""
+
+    def setUp(self):
+        with open(os.path.join(BUNDLE, "Contents", "Info.plist"), "rb") as f:
+            self.info = plistlib.load(f)
+
+    def test_feed_and_key(self):
+        self.assertEqual(self.info["SUFeedURL"], "https://github.com/granthorner-1980/dlog-tagger"
+                                                 "/releases/latest/download/appcast.xml")
+        self.assertEqual(len(base64.b64decode(self.info["SUPublicEDKey"], validate=True)), 32)
+
+    def test_signed_updates_required(self):
+        self.assertIs(self.info.get("SUVerifyUpdateBeforeExtraction"), True)
+        self.assertIs(self.info.get("SURequireSignedFeed"), True)
+
+    def test_framework_embedded_and_signed(self):
+        fw = os.path.join(BUNDLE, "Contents", "Frameworks", "Sparkle.framework")
+        self.assertTrue(os.path.islink(os.path.join(fw, "Versions", "Current")), "framework symlinks lost")
+        r = subprocess.run(["codesign", "--verify", "--strict", BUNDLE], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class UpdateFeed(Base):
+    def test_appcast(self):
+        z = self.write("DLogTagger-9.8.7-macOS.zip", b"zipdata")
+        notes = self.write("notes.md", "### Fixed\n- Tricky ]]> & <chars>\n".encode())
+        url = "https://github.com/granthorner-1980/dlog-tagger/releases/download/v9.8.7/DLogTagger-9.8.7-macOS.zip"
+        r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, ".github", "scripts", "appcast.py"),
+                            "9.8.7", "14.0", url, z, "c2lnbmF0dXJl", notes],
+                           capture_output=True, text=True, check=True)
+        item = ET.fromstring(r.stdout).find("channel/item")
+        self.assertEqual(item.findtext(SPARKLE_NS + "version"), "9.8.7")
+        self.assertEqual(item.findtext(SPARKLE_NS + "minimumSystemVersion"), "14.0.0")
+        desc = item.find("description")
+        self.assertEqual(desc.get(SPARKLE_NS + "format"), "markdown")
+        self.assertIn("Tricky ]]> & <chars>", desc.text)
+        enc = item.find("enclosure")
+        self.assertEqual(enc.get("url"), url)
+        self.assertEqual(enc.get("length"), "7")
+        self.assertEqual(enc.get(SPARKLE_NS + "edSignature"), "c2lnbmF0dXJl")
 
 
 class CLIRenaming(Base):
