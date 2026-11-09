@@ -469,6 +469,14 @@ struct StatusText: View {
 struct ContentView: View {
     @ObservedObject var model: Model
     @State private var confirmRestore = false
+    @State private var selection = Set<Clip.ID>()
+
+    /// Opens Finder with these clips selected (each in its own folder).
+    private func reveal(_ ids: Set<Clip.ID>) {
+        let urls = model.clips.filter { ids.contains($0.id) }.map(\.url)
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -479,6 +487,11 @@ struct ContentView: View {
                     .foregroundStyle(model.folder == nil ? .secondary : .primary)
                     .help(model.folder?.path ?? "")
                 Spacer()
+                Button { if let f = model.folder { NSWorkspace.shared.open(f) } } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .help("Open this folder in Finder")
+                .disabled(model.folder == nil)
                 Button("Choose Folder…") { model.chooseFolder() }
             }
 
@@ -510,12 +523,18 @@ struct ContentView: View {
                 .disabled(model.toRename == 0 || model.busy)
             }
 
-            Table(model.clips) {
+            Table(model.clips, selection: $selection) {
                 TableColumn("Clip") { Text($0.name).lineLimit(1).truncationMode(.middle) }
                     .width(min: 180, ideal: 260)
                 TableColumn("Shot in") { ProfileBadge(profile: $0.detection.profile) }
                     .width(90)
                 TableColumn("Result") { StatusText(clip: $0).lineLimit(1).truncationMode(.middle) }
+            }
+            .contextMenu(forSelectionType: Clip.ID.self) { ids in
+                Button(ids.count > 1 ? "Show \(ids.count) Clips in Finder" : "Show in Finder") { reveal(ids) }
+                    .disabled(ids.isEmpty)
+            } primaryAction: { ids in
+                reveal(ids)                 // double-click a clip
             }
 
             HStack {

@@ -66,6 +66,9 @@ cd dlog-tagger/mac
 Clips that are already renamed and tagged are skipped, so it's safe to run on the same folder again.
 Clips it doesn't recognise (e.g. normal-colour footage) are left untouched.
 
+**Show in Finder** opens the folder. Double-click a clip (or right-click → Show in Finder) to open Finder with
+that file selected.
+
 **Changed your mind?**
 
 - **Undo** (or **⌘Z**) straight after Rename & Tag reverses exactly what it just did.
